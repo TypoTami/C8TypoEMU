@@ -22,9 +22,10 @@ namespace C8TypoEmu
 
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");
-
+            //CurrentState.currentROM = File.ReadAllBytes("testRoms/Fishie.ch8");
             CurrentState.currentROM = File.ReadAllBytes("testRoms/test_opcode.ch8");
+
+            Disassembler.BytestoBitmap(CurrentState.currentROM, 0xF);
 
             Disassembler.DisassembleROM(CurrentState.currentROM);
         }
