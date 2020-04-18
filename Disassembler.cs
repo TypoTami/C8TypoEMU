@@ -205,7 +205,7 @@ namespace C8TypoEmu
             }
         }
 
-        public static void BytestoBitmap(byte[] ROM, int width = 0xF)
+        public static void BytestoBitmap(byte[] ROM, int width = 0xF, string output = "output.bmp")
         {
             width += 1;
             int height = (int)Math.Ceiling((double)ROM.Length / (double)width);
@@ -220,7 +220,7 @@ namespace C8TypoEmu
                     i++;
                 }
             }
-            bitmap.Save("rom.bmp");
+            bitmap.Save(output);
         }
     }
 }
