@@ -28,8 +28,12 @@ namespace C8TypoEmu
 
         protected override void Initialize()
         {
+            //this.TargetElapsedTime = TimeSpan.FromSeconds(1d / 30d);
             // Load a rom
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/BREAKOUT.ch8");
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/Fishie.ch8");
             Emulator.currentROM = File.ReadAllBytes("testRoms/test_opcode.ch8");
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/drawZero.ch8");
 
             Disassembler.BytestoBitmap(Emulator.currentROM, 0xF, "rom.bmp");
             Disassembler.DisassembleROM(Emulator.currentROM);
@@ -60,7 +64,7 @@ namespace C8TypoEmu
             {
                 Emulator.display[i] = 0xFF000000;
             }
-            
+
             base.Initialize();
         }
 

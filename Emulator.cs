@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Collections;
 
 namespace C8TypoEmu
 {
@@ -6,7 +8,7 @@ namespace C8TypoEmu
     {
         // http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#2.2
         static public byte[] registers = new byte[0x10]; // 16, 8-Bit registers - V0 to VF (VF doubles as a flag for some instructions)
-        static public short registerI; // Generally used to store memory addresses
+        static public short registerI = 0x000; // Generally used to store memory addresses
         static public short programCounter = 0x200; // 16-Bit program counter. Starts at 0x200
         static public byte stackPointer; // Stack pointer. Self explanatory
         static public short[] stack = new short[16]; // Holds up to 16, 16-Bit memory addresses that the interpreter should return to after subroutines
@@ -34,6 +36,20 @@ namespace C8TypoEmu
             {0xF0, 0x80, 0xF0, 0x80, 0x80}  // F
         };
         static public UInt32[] display = new UInt32[64 * 32];
+
+        static public bool DrawPixel(int x, int y, UInt32 colour = 0xFFFFFFFF)
+        {
+            bool collision = false;
+            if (Emulator.display[x+(64*y)] == colour)
+            {
+                collision = true;
+            }
+            else
+            {
+                Emulator.display[x+(64*y)] = colour;
+            }
+            return collision;            
+        }
 
         static public void IncrementTimers()
         {
@@ -110,6 +126,151 @@ namespace C8TypoEmu
                     if (registers[x] == kk)
                     {
                         programCounter += 2;
+                    }
+                    break;
+                }
+                case 0x4:
+                {// Handle 4xkk - SE Vx, byte
+                    if (registers[x] != kk)
+                    {
+                        programCounter += 2;
+                    }
+                    break;
+                }
+                case 0x5:
+                {// Handle 5xy0 - SE Vx, Vy
+                    if (registers[x] == registers[y])
+                    {
+                        programCounter += 2;
+                    }
+                    break;
+                }
+                case 0x6:
+                {// Handle 6xkk - LD Vx, byte
+                    registers[x] = kk;
+                    break;
+                }
+                case 0x7:
+                {// Handle 7xkk - ADD Vx, byte
+                    registers[x] = (byte)(registers[x] + kk);
+                    break;
+                }
+                case 0x8:
+                {// Handle 8xy-
+                    switch(lastNibble) 
+                    {
+                        case 0x0:
+                        {// Handle 8xy0 - LD Vx, Vy
+                            registers[x] = registers[y];
+                            break;
+                        }
+                        case 0x1:
+                        {// Handle 8xy1 - OR Vx, Vy
+                            registers[x] = (byte)(registers[x] | registers[y]);
+                            break;
+                        }
+                        case 0x2:
+                        {// Handle 8xy2 - AND Vx, Vy
+                            registers[x] = (byte)(registers[x] & registers[y]);
+                            break;
+                        }
+                        case 0x3:
+                        {// Handle 8xy3 - XOR Vx, Vy
+                            registers[x] = (byte)(registers[x] ^ registers[y]);
+                            break;
+                        }
+                        case 0x4:
+                        {// Handle 8xy4 - ADD Vx, Vy
+                            int sum = registers[x] + registers[y];
+                            if (sum > 0xFF)
+                            {
+                                registers[x] = 0xFF;
+                                registers[0xF] = 1;
+                            }
+                            break;
+                        }
+                        case 0x5:
+                        {// Handle 8xy5 - SUB Vx, Vy
+                            if (registers[x] > registers[y])
+                            {
+                                registers[x] = (byte)(registers[x] - registers[y]);
+                                registers[0xF] = 1;
+                            }
+                            else 
+                            {
+                                registers[x] = (byte)(registers[x] - registers[y]);
+                                registers[0xF] = 0;
+                            }
+                            break;
+                        }
+                        case 0x6:
+                        {// Handle 8xy6 - SHR Vx
+                            BitArray currentByte = new BitArray(new byte[] { registers[x] });
+                            if (currentByte.Get(0) == true)
+                            {
+                                registers[0xF] = 1;
+                            }
+                            else
+                            {
+                                registers[0xF] = 0;
+                            }
+                            registers[x] = (byte)(registers[x] >> 1);
+                            break;
+                        }
+                        case 0x7:
+                        {// Handle 8xy7 - SUBN Vx, Vy
+                            if (registers[y] > registers[x])
+                            {
+                                registers[x] = (byte)(registers[y] - registers[x]);
+                                registers[0xF] = 1;
+                            }
+                            else 
+                            {
+                                registers[x] = (byte)(registers[y] - registers[x]);
+                                registers[0xF] = 0;
+                            }
+                            break;
+                        }
+                        case 0xE:
+                        {// Handle 8xyE - SHL Vx
+                            BitArray currentByte = new BitArray(new byte[] { registers[x] });
+                            if (currentByte.Get(7) == true)
+                            {
+                                registers[0xF] = 1;
+                            }
+                            else
+                            {
+                                registers[0xF] = 0;
+                            }
+                            registers[x] = (byte)(registers[x] << 1);
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case 0xA:
+                {// Handle Annn - LD I, addr
+                    registerI = addr;
+                    break;
+                }
+                case 0xD:
+                {// Handle Dxyn - DRW Vx, Vy, nibble
+                    short iOffset = registerI;
+                    BitArray currentLine;
+
+                    for (int line = 0; line < lastNibble; line++)
+                    {
+                        currentLine = new BitArray(new byte[] { memory[line + registerI] });
+                        for (int row = 8; row > 0; row--)
+                        {
+                            if (currentLine[row - 1] == true)
+                            {
+                                if (DrawPixel(row + x - 4, line + y) == true)
+                                {
+                                    registers[0xF] = 0x1;
+                                }
+                            }
+                        }
                     }
                     break;
                 }
