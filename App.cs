@@ -11,6 +11,7 @@ namespace C8TypoEmu
         GraphicsDeviceManager graphics;
         SpriteBatch spriteBatch;
         Texture2D canvas;
+        Texture2D memoryMap;
         SpriteFont genericFont;
         String info;
 
@@ -28,15 +29,18 @@ namespace C8TypoEmu
 
         protected override void Initialize()
         {
-            //this.TargetElapsedTime = TimeSpan.FromSeconds(1d / 30d);
+            // this.TargetElapsedTime = TimeSpan.FromSeconds(1d / 2d);
             // Load a rom
             // Emulator.currentROM = File.ReadAllBytes("testRoms/BREAKOUT.ch8");
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/INVADERS.ch8");
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/PONG.ch8");
             // Emulator.currentROM = File.ReadAllBytes("testRoms/Fishie.ch8");
-            Emulator.currentROM = File.ReadAllBytes("testRoms/test_opcode.ch8");
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/test_opcode.ch8");
+            Emulator.currentROM = File.ReadAllBytes("testRoms/BC_test.ch8");
             // Emulator.currentROM = File.ReadAllBytes("testRoms/drawZero.ch8");
 
             Disassembler.BytestoBitmap(Emulator.currentROM, 0xF, "rom.bmp");
-            Disassembler.DisassembleROM(Emulator.currentROM);
+            //Disassembler.DisassembleROM(Emulator.currentROM);
 
             // Put font into memory
             int pos = 0x00;
@@ -56,13 +60,18 @@ namespace C8TypoEmu
                 pos++;
             }
 
-            Disassembler.BytestoBitmap(Emulator.memory, 0x3F, "memory.bmp");
-
             // Setup display
             canvas = new Texture2D(GraphicsDevice, 64, 32, false, SurfaceFormat.Color);
             for (int i = 0; i < 64 * 32; i++)
             {
                 Emulator.display[i] = 0xFF000000;
+            }
+
+            // Setup memoryMap
+            memoryMap = new Texture2D(GraphicsDevice, 64, 64, false, SurfaceFormat.Color);
+            for (int i = 0; i < 64 * 64; i++)
+            {
+                Disassembler.memoryMap[i] = 0xFF000000;
             }
 
             base.Initialize();
@@ -92,6 +101,9 @@ namespace C8TypoEmu
 
             info = String.Join(
             Environment.NewLine,
+            $"executionPaused: {Emulator.executionPaused}", 
+            $"pausedOn: {Emulator.pausedOn[0]:X2}{Emulator.pausedOn[1]:X2}",
+            "",
             $"PC: {Emulator.programCounter:X4}",
             $"DT: {Emulator.delayTimer:X2} ST: {Emulator.soundTimer:X2}",
             $"SP: {Emulator.stackPointer:X2}",
@@ -110,6 +122,7 @@ namespace C8TypoEmu
 
             Emulator.ExecuteNextOpCode();
             Emulator.IncrementTimers();
+            Disassembler.MapMemory(Emulator.memory);
 
             base.Update(gameTime);
         }
@@ -120,10 +133,12 @@ namespace C8TypoEmu
             graphics.GraphicsDevice.Textures[0] = null;
 
             canvas.SetData<UInt32>(Emulator.display, 0, 64 * 32);
+            memoryMap.SetData<UInt32>(Disassembler.memoryMap, 0, 64 * 64);
             
-            spriteBatch.Begin(samplerState: SamplerState.PointClamp);
+            spriteBatch.Begin(samplerState: SamplerState.PointClamp, blendState: BlendState.AlphaBlend);
 
-            spriteBatch.Draw(canvas, new Rectangle(0, 0, 1280, 720), Color.White);
+            spriteBatch.Draw(canvas, new Rectangle(0, 40, 1280, 640), Color.White);
+            spriteBatch.Draw(memoryMap, new Rectangle(1280 - 64*4, 720 - 64*4, 64*4, 64*4), Color.White * 0.5f);
 
             Vector2 textLeftPoint = new Vector2(0,0);
             Vector2 textPosition = new Vector2(10,10);

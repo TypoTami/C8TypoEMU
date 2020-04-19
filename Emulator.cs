@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Collections;
 
 namespace C8TypoEmu
@@ -14,8 +13,13 @@ namespace C8TypoEmu
         static public short[] stack = new short[16]; // Holds up to 16, 16-Bit memory addresses that the interpreter should return to after subroutines
         static public byte delayTimer = 0x00;
         static public byte soundTimer = 0x00;
+        static public bool[] keyboard = new bool[16];
         static public byte[] memory = new byte[4096];
+        static public UInt32[] display = new UInt32[64 * 32];
         static public byte[] currentROM;
+        static public bool executionPaused = false;
+        static public byte[] pausedOn = new byte[2] { 0x00, 0x00 };
+        static private bool incrementCounter;
         static public readonly byte[,] font = new byte[16,5] // This is our default font.
         {
             {0xF0, 0x90, 0x90, 0x90, 0xF0}, // 0
@@ -35,7 +39,6 @@ namespace C8TypoEmu
             {0xF0, 0x80, 0xF0, 0x80, 0xF0}, // E
             {0xF0, 0x80, 0xF0, 0x80, 0x80}  // F
         };
-        static public UInt32[] display = new UInt32[64 * 32];
 
         static public bool DrawPixel(int x, int y, UInt32 colour = 0xFFFFFFFF)
         {
@@ -65,11 +68,19 @@ namespace C8TypoEmu
 
         static public void ExecuteNextOpCode()
         {
-            Byte[] OpCode = new Byte[2];
-            OpCode[0] = memory[programCounter];
-            programCounter++;
-            OpCode[1] = memory[programCounter];
-            programCounter++;
+            byte[] OpCode = new byte[2];
+            if (executionPaused == false)
+            {
+                OpCode[0] = memory[programCounter];
+                OpCode[1] = memory[programCounter + 1];
+                incrementCounter = true;
+            }
+            else
+            {
+                OpCode[0] = pausedOn[0];
+                OpCode[1] = pausedOn[1];
+                incrementCounter = false;
+            }
 
             // Split the opcode into a bunch of pieces
             byte firstNibble = (byte)(OpCode[0] >> 4); // Highest 4 bits of the instruction
@@ -89,7 +100,7 @@ namespace C8TypoEmu
                         {// Handle 00E0 - CLS
                             for (int i = 0; i < 64 * 32; i++)
                             {
-                                display[i] = 0xFF000000;
+                                display[i] = 0xAF000000;
                             }
                             break;
                         }
@@ -100,6 +111,7 @@ namespace C8TypoEmu
                             {
                                 stackPointer--;
                             }
+                            incrementCounter = false;
                             break;
                         }
                         default:
@@ -112,6 +124,7 @@ namespace C8TypoEmu
                 case 0x1: 
                 {// Handle 1nnn - JP addr
                     programCounter = addr;
+                    incrementCounter = false;
                     break;
                 }
                 case 0x2:
@@ -119,13 +132,15 @@ namespace C8TypoEmu
                     stack[stackPointer] = programCounter;
                     stackPointer++;
                     programCounter = addr;
+                    incrementCounter = false;
                     break;
                 }
                 case 0x3:
                 {// Handle 3xkk - SE Vx, byte
                     if (registers[x] == kk)
                     {
-                        programCounter += 2;
+                        programCounter += 4;
+                        incrementCounter = false;
                     }
                     break;
                 }
@@ -133,7 +148,8 @@ namespace C8TypoEmu
                 {// Handle 4xkk - SE Vx, byte
                     if (registers[x] != kk)
                     {
-                        programCounter += 2;
+                        programCounter += 4;
+                        incrementCounter = false;
                     }
                     break;
                 }
@@ -141,7 +157,8 @@ namespace C8TypoEmu
                 {// Handle 5xy0 - SE Vx, Vy
                     if (registers[x] == registers[y])
                     {
-                        programCounter += 2;
+                        programCounter += 4;
+                        incrementCounter = false;
                     }
                     break;
                 }
@@ -253,6 +270,18 @@ namespace C8TypoEmu
                     registerI = addr;
                     break;
                 }
+                case 0xB:
+                {// Handle Bnnn - JP V0, addr
+                    programCounter = (byte)(registers[0x0] + addr);
+                    incrementCounter = false;
+                    break;
+                }
+                case 0xC:
+                {// Handle Cxkk - RND Vx, byte
+                    Random rnd = new Random();
+                    registers[x] = (byte)(rnd.Next(0,255) & kk);
+                    break;
+                }
                 case 0xD:
                 {// Handle Dxyn - DRW Vx, Vy, nibble
                     short iOffset = registerI;
@@ -265,7 +294,14 @@ namespace C8TypoEmu
                         {
                             if (currentLine[row - 1] == true)
                             {
-                                if (DrawPixel(row + x - 4, line + y) == true)
+                                if (DrawPixel(row + x - 4, line + y, 0xFFFFFFFF) == true)
+                                {
+                                    registers[0xF] = 0x1;
+                                }
+                            }
+                            else if (currentLine[row - 1] == false)
+                            {
+                                if (DrawPixel(row + x - 4, line + y, 0xFF000000) == true)
                                 {
                                     registers[0xF] = 0x1;
                                 }
@@ -274,10 +310,113 @@ namespace C8TypoEmu
                     }
                     break;
                 }
+                case 0xE:
+                {// Handle Ex--
+                    switch (OpCode[1])
+                    {
+                        case 0x9E:
+                        {// Handle Ex9E - SKP Vx
+                            if (registers[x] <= 0xF)
+                            {
+                                if (keyboard[registers[x]] == true)
+                                {
+                                    programCounter += 4;
+                                    incrementCounter = false;
+                                }
+                            }
+                            break;
+                        }
+                        case 0xA1:
+                        {// Handle ExA1 - SKNP Vx
+                            if (registers[x] <= 0xF)
+                            {
+                                if (keyboard[registers[x]] != true)
+                                {
+                                    programCounter += 4;
+                                    incrementCounter = false;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case 0xF:
+                {// Handle Fx--
+                    switch (OpCode[1])
+                    {
+                        case 0x07:
+                        {// Handle Fx07 - LD Vx, DT
+                            registers[x] = delayTimer;
+                            break;
+                        }
+                        case 0x0A:
+                        {// Handle Fx0A - LD Vx, K
+                            executionPaused = true;
+                            for (int i = 0; i < 16; i++)
+                            {
+                                if (keyboard[i] == true)
+                                {
+                                    executionPaused = false;
+                                    registers[x] = (byte)i;
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                        case 0x15:
+                        {// Handle Fx15 - LD DT, Vx
+                            delayTimer = registers[x];
+                            break;
+                        }
+                        case 0x18:
+                        {// Handle Fx1E - ADD I, Vx
+                            soundTimer = registers[x];
+                            break;
+                        }
+                        case 0x1E:
+                        {// Handle Fx1E - ADD I, Vx
+                            registerI += registers[x];
+                            break;
+                        }
+                        case 0x29:
+                        {// Handle Fx29 - LD F, Vx
+                            registerI = (byte)(x * 0x5);
+                            break;
+                        }
+                        case 0x33:
+                        {// Handle Fx33 - LD B, Vx
+                            // TODO BCD rubbish...
+                            break;
+                        }
+                        case 0x55:
+                        {// Handle Fx55 - LD [I], Vx
+                            for (int i = 0; i < x; i++)
+                            {
+                                memory[i + registerI] = registers[i];
+                            }
+                            break;
+                        }
+                        case 0x65:
+                        {// Handle Fx65 - LD Vx, [I]
+                            for (int i = 0; i < x; i++)
+                            {
+                                registers[i] = memory[i + registerI];
+                            }
+                            break;
+                        }
+                    }
+                    break;
+                }
                 default:
                 {
                     break;
                 }
+            }
+
+            if (incrementCounter == true)
+            {
+                programCounter += 2;
             }
         }
     }

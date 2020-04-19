@@ -7,14 +7,15 @@ namespace C8TypoEmu
 {
     static class Disassembler
     {
+        static public UInt32[] memoryMap = new UInt32[64 * 64];
         public static void DisassembleROM(byte[] ROM)
         {
-            Byte[] OpCode = new Byte[2];
+            byte[] OpCode = new byte[2];
 
-            for (short pc = 0x200; pc < 0x200 + ROM.Length; pc += 0x2)
+            for (short pc = 0; pc < ROM.Length; pc += 2)
             {
-                OpCode[0] = ROM[pc - 0x200];
-                OpCode[1] = ROM[pc - 0x1FF];
+                OpCode[0] = ROM[pc];
+                OpCode[1] = ROM[pc + 1];
                 var currentCode = DisassembleOpCode(OpCode, pc);
                 Console.WriteLine($"{pc,0:X4} | {OpCode[0],0:X2}{OpCode[1],0:X2} | {currentCode.disassembled.PadRight(26)}-  {currentCode.description}");
             }
@@ -221,6 +222,13 @@ namespace C8TypoEmu
                 }
             }
             bitmap.Save(output);
+        }
+        public static void MapMemory(byte[] memory)
+        {
+            for (int i = 0; i < 4096; i++)
+            {
+                memoryMap[i] = 0xFF000000 + memory[i];
+            }
         }
     }
 }
