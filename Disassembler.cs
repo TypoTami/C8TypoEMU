@@ -21,7 +21,7 @@ namespace C8TypoEmu
             }
         }
 
-        private static (string disassembled, string description) DisassembleOpCode(byte[] OpCode, short ProgramCounter)
+        public static (string disassembled, string description) DisassembleOpCode(byte[] OpCode, short ProgramCounter)
         {
             byte firstNibble = (byte)(OpCode[0] >> 4);
             byte lastNibble = (byte)((byte)OpCode[1] & (byte)0xF); // Lowest 4 bits of the instruction.
@@ -223,12 +223,13 @@ namespace C8TypoEmu
             }
             bitmap.Save(output);
         }
-        public static void MapMemory(byte[] memory)
+        public static void MapMemory(byte[] memory, int programCounter)
         {
             for (int i = 0; i < 4096; i++)
             {
                 memoryMap[i] = 0xFF000000 + memory[i];
             }
+            memoryMap[programCounter] = memoryMap[programCounter] + 0x0000FF00;
         }
     }
 }

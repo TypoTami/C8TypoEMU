@@ -43,6 +43,15 @@ namespace C8TypoEmu
         static public bool DrawPixel(int x, int y, UInt32 colour = 0xFFFFFFFF)
         {
             bool collision = false;
+            if (x >= 64)
+            {
+                x -= 64;
+            }
+            if (y >= 64)
+            {
+                y -= 64;
+            }
+
             if (Emulator.display[x+(64*y)] == colour)
             {
                 collision = true;
@@ -106,12 +115,11 @@ namespace C8TypoEmu
                         }
                         case 0xEE:
                         {// Handle 00EE - RET
-                            programCounter = stack[stackPointer];
                             if (stackPointer != 0)
                             {
                                 stackPointer--;
                             }
-                            incrementCounter = false;
+                            programCounter = stack[stackPointer];
                             break;
                         }
                         default:
@@ -129,8 +137,8 @@ namespace C8TypoEmu
                 }
                 case 0x2:
                 {// Handle 2nnn - CALL addr
-                    stack[stackPointer] = programCounter;
                     stackPointer++;
+                    stack[stackPointer - 1] = programCounter;
                     programCounter = addr;
                     incrementCounter = false;
                     break;
@@ -139,8 +147,7 @@ namespace C8TypoEmu
                 {// Handle 3xkk - SE Vx, byte
                     if (registers[x] == kk)
                     {
-                        programCounter += 4;
-                        incrementCounter = false;
+                        programCounter += 2;
                     }
                     break;
                 }
@@ -148,8 +155,7 @@ namespace C8TypoEmu
                 {// Handle 4xkk - SE Vx, byte
                     if (registers[x] != kk)
                     {
-                        programCounter += 4;
-                        incrementCounter = false;
+                        programCounter += 2;
                     }
                     break;
                 }
@@ -157,8 +163,7 @@ namespace C8TypoEmu
                 {// Handle 5xy0 - SE Vx, Vy
                     if (registers[x] == registers[y])
                     {
-                        programCounter += 4;
-                        incrementCounter = false;
+                        programCounter += 2;
                     }
                     break;
                 }
@@ -201,7 +206,7 @@ namespace C8TypoEmu
                             int sum = registers[x] + registers[y];
                             if (sum > 0xFF)
                             {
-                                registers[x] = 0xFF;
+                                registers[x] = (byte)(sum & 0xFF);
                                 registers[0xF] = 1;
                             }
                             break;
@@ -265,6 +270,14 @@ namespace C8TypoEmu
                     }
                     break;
                 }
+                case 0x9:
+                {// Handle 9xy0 - SNE Vx, Vy
+                    if (registers[x] != registers[y])
+                    {
+                        programCounter += 2;
+                    }
+                    break;
+                }
                 case 0xA:
                 {// Handle Annn - LD I, addr
                     registerI = addr;
@@ -273,7 +286,6 @@ namespace C8TypoEmu
                 case 0xB:
                 {// Handle Bnnn - JP V0, addr
                     programCounter = (byte)(registers[0x0] + addr);
-                    incrementCounter = false;
                     break;
                 }
                 case 0xC:
@@ -284,28 +296,29 @@ namespace C8TypoEmu
                 }
                 case 0xD:
                 {// Handle Dxyn - DRW Vx, Vy, nibble
-                    short iOffset = registerI;
                     BitArray currentLine;
+                    BitArray flippedLine = new BitArray(8);
 
                     for (int line = 0; line < lastNibble; line++)
                     {
                         currentLine = new BitArray(new byte[] { memory[line + registerI] });
+                        int j = 7;
+                        for (int i = 0; i < 8; i++, j--)
+                        {
+                            flippedLine[i] = currentLine.Get(j);
+                        }
                         for (int row = 8; row > 0; row--)
                         {
-                            if (currentLine[row - 1] == true)
+                            if (flippedLine.Get(row - 1) == true)
                             {
-                                if (DrawPixel(row + x - 4, line + y, 0xFFFFFFFF) == true)
-                                {
-                                    registers[0xF] = 0x1;
-                                }
+                                if (DrawPixel(row + registers[x], line + registers[y], 0xFFFFFFFF) == true)
+                                    registers[0xF] = 1;
                             }
-                            else if (currentLine[row - 1] == false)
+                            else
                             {
-                                if (DrawPixel(row + x - 4, line + y, 0xFF000000) == true)
-                                {
-                                    registers[0xF] = 0x1;
+                                if (DrawPixel(row + registers[x], line + registers[y], 0xFF000000) == true)
+                                    registers[0xF] = 1;
                                 }
-                            }
                         }
                     }
                     break;
@@ -320,8 +333,7 @@ namespace C8TypoEmu
                             {
                                 if (keyboard[registers[x]] == true)
                                 {
-                                    programCounter += 4;
-                                    incrementCounter = false;
+                                    programCounter += 2;
                                 }
                             }
                             break;
@@ -332,8 +344,7 @@ namespace C8TypoEmu
                             {
                                 if (keyboard[registers[x]] != true)
                                 {
-                                    programCounter += 4;
-                                    incrementCounter = false;
+                                    programCounter += 2;
                                 }
                             }
                             break;
@@ -381,17 +392,19 @@ namespace C8TypoEmu
                         }
                         case 0x29:
                         {// Handle Fx29 - LD F, Vx
-                            registerI = (byte)(x * 0x5);
+                            registerI = (byte)(registers[x] * 0x5);
                             break;
                         }
                         case 0x33:
                         {// Handle Fx33 - LD B, Vx
-                            // TODO BCD rubbish...
+                            memory[registerI] = (byte)(registers[x] % 10);
+                            memory[registerI + 1] = (byte)((registers[x] / 10) % 10);
+                            memory[registerI + 2] = (byte)(registers[x] / 100);
                             break;
                         }
                         case 0x55:
                         {// Handle Fx55 - LD [I], Vx
-                            for (int i = 0; i < x; i++)
+                            for (int i = 0; i < x + 1; i++)
                             {
                                 memory[i + registerI] = registers[i];
                             }
@@ -399,7 +412,7 @@ namespace C8TypoEmu
                         }
                         case 0x65:
                         {// Handle Fx65 - LD Vx, [I]
-                            for (int i = 0; i < x; i++)
+                            for (int i = 0; i < x + 1; i++)
                             {
                                 registers[i] = memory[i + registerI];
                             }

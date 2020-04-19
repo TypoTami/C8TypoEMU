@@ -14,6 +14,12 @@ namespace C8TypoEmu
         Texture2D memoryMap;
         SpriteFont genericFont;
         String info;
+        int clockspeed;
+        // MAXIMUM BODGE ENGAGE
+        bool singleStep = false;
+        short breakPoint = 0xFFF;
+        KeyboardState currentState;
+        KeyboardState oldState;
 
         public App()
         {
@@ -32,11 +38,12 @@ namespace C8TypoEmu
             // this.TargetElapsedTime = TimeSpan.FromSeconds(1d / 2d);
             // Load a rom
             // Emulator.currentROM = File.ReadAllBytes("testRoms/BREAKOUT.ch8");
-            // Emulator.currentROM = File.ReadAllBytes("testRoms/INVADERS.ch8");
+            Emulator.currentROM = File.ReadAllBytes("testRoms/INVADERS.ch8");
             // Emulator.currentROM = File.ReadAllBytes("testRoms/PONG.ch8");
             // Emulator.currentROM = File.ReadAllBytes("testRoms/Fishie.ch8");
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/c8_test.c8");
             // Emulator.currentROM = File.ReadAllBytes("testRoms/test_opcode.ch8");
-            Emulator.currentROM = File.ReadAllBytes("testRoms/BC_test.ch8");
+            // Emulator.currentROM = File.ReadAllBytes("testRoms/BC_test.ch8");
             // Emulator.currentROM = File.ReadAllBytes("testRoms/drawZero.ch8");
 
             Disassembler.BytestoBitmap(Emulator.currentROM, 0xF, "rom.bmp");
@@ -74,6 +81,10 @@ namespace C8TypoEmu
                 Disassembler.memoryMap[i] = 0xFF000000;
             }
 
+            // Set clockspeed (Hz)
+            clockspeed = 500;
+            // clockspeed = 60;
+
             base.Initialize();
         }
 
@@ -88,6 +99,8 @@ namespace C8TypoEmu
 
         protected override void Update(GameTime gameTime)
         {
+            currentState = Keyboard.GetState();
+
             if (Keyboard.GetState().IsKeyDown(Keys.Escape))
             {
                 Exit();
@@ -99,10 +112,38 @@ namespace C8TypoEmu
                 stackArray = stackArray + " " + Emulator.stack[i].ToString("X4");
             }
 
+            if (Emulator.programCounter == breakPoint)
+            {
+                singleStep = true;
+            }
+
+            int opcodesPerFrame = clockspeed / 60;
+            if (singleStep == false)
+            {
+                for (int i = 0; i < opcodesPerFrame; i++)
+                {
+                    Emulator.ExecuteNextOpCode();
+                }
+            }
+            else if (currentState.IsKeyDown(Keys.NumPad0) & oldState.IsKeyUp(Keys.NumPad0))
+            {
+                Emulator.ExecuteNextOpCode();
+            }
+
+            oldState = currentState;
+
+            Emulator.IncrementTimers();
+            byte[] OpCode = new byte[2] { Emulator.memory[Emulator.programCounter], Emulator.memory[Emulator.programCounter + 1] };
+            var currentOpCode = Disassembler.DisassembleOpCode(OpCode, Emulator.programCounter);
+            Disassembler.MapMemory(Emulator.memory, Emulator.programCounter);
             info = String.Join(
             Environment.NewLine,
+            $"Clockspeed: {clockspeed:d4}Hz, opcodesPerFrame: {opcodesPerFrame:d2}",
+            "",
             $"executionPaused: {Emulator.executionPaused}", 
             $"pausedOn: {Emulator.pausedOn[0]:X2}{Emulator.pausedOn[1]:X2}",
+            "",
+            $"currentOpCode: {OpCode[0]:X2}{OpCode[1]:X2} - {currentOpCode.disassembled}",
             "",
             $"PC: {Emulator.programCounter:X4}",
             $"DT: {Emulator.delayTimer:X2} ST: {Emulator.soundTimer:X2}",
@@ -120,10 +161,6 @@ namespace C8TypoEmu
             $"V6: {Emulator.registers[0x6]:X2} VE: {Emulator.registers[0xE]:X2}",
             $"V7: {Emulator.registers[0x7]:X2} VF: {Emulator.registers[0xF]:X2}");
 
-            Emulator.ExecuteNextOpCode();
-            Emulator.IncrementTimers();
-            Disassembler.MapMemory(Emulator.memory);
-
             base.Update(gameTime);
         }
 
@@ -138,7 +175,7 @@ namespace C8TypoEmu
             spriteBatch.Begin(samplerState: SamplerState.PointClamp, blendState: BlendState.AlphaBlend);
 
             spriteBatch.Draw(canvas, new Rectangle(0, 40, 1280, 640), Color.White);
-            spriteBatch.Draw(memoryMap, new Rectangle(1280 - 64*4, 720 - 64*4, 64*4, 64*4), Color.White * 0.5f);
+            spriteBatch.Draw(memoryMap, new Rectangle(1280 - 64*4, 720 - 64*4, 64*4, 64*4), Color.White * 0.75f);
 
             Vector2 textLeftPoint = new Vector2(0,0);
             Vector2 textPosition = new Vector2(10,10);
