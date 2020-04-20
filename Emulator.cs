@@ -40,26 +40,66 @@ namespace C8TypoEmu
             {0xF0, 0x80, 0xF0, 0x80, 0x80}  // F
         };
 
+        static public void Init()
+        {
+            Array.Clear(registers, 0 , 16);
+            registerI = 0x000;
+            programCounter = 0x200;
+            stackPointer = 0x00;
+            Array.Clear(stack, 0, 16);
+            delayTimer = 0x00;
+            soundTimer = 0x00;
+            Array.Clear(keyboard, 0, 16);
+            Array.Clear(memory, 0, 4096);
+            // Put font into memory
+            int pos = 0x00;
+            for (int i = 0; i < 16; i++)
+            {
+                for (int j = 0; j < 5; j++)
+                {
+                    Emulator.memory[pos] = Emulator.font[i,j];
+                    pos++;
+                }
+            }
+            // Clear display
+            for (int i = 0; i < 64 * 32; i++)
+            {
+                display[i] = 0xFF000000;
+            }
+            // Put rom into memory
+            for (int i = 0; i < Emulator.currentROM.Length; i++)
+            {
+                Emulator.memory[programCounter] = Emulator.currentROM[i];
+                programCounter++;
+            }
+            programCounter = 0x200;
+        }
+
         static public bool DrawPixel(int x, int y, UInt32 colour = 0xFFFFFFFF)
         {
             bool collision = false;
+            UInt32 pixelBefore;
+            UInt32 pixelAfter;
+
+            x -= 1;
             if (x >= 64)
             {
                 x -= 64;
             }
-            if (y >= 64)
+            if (y >= 32)
             {
-                y -= 64;
+                y -= 32;
             }
 
-            if (Emulator.display[x+(64*y)] == colour)
-            {
+            pixelBefore = Emulator.display[x+(64*y)];
+
+            Emulator.display[x+(64*y)] = (Emulator.display[x+(64*y)] ^ colour) | 0xFF000000; 
+
+            pixelAfter = Emulator.display[x+(64*y)];
+
+            if ((pixelBefore != pixelAfter) & pixelBefore == 0xFFFFFFFF)
                 collision = true;
-            }
-            else
-            {
-                Emulator.display[x+(64*y)] = colour;
-            }
+
             return collision;            
         }
 
@@ -109,7 +149,7 @@ namespace C8TypoEmu
                         {// Handle 00E0 - CLS
                             for (int i = 0; i < 64 * 32; i++)
                             {
-                                display[i] = 0xAF000000;
+                                display[i] = 0xFF000000;
                             }
                             break;
                         }
@@ -174,7 +214,15 @@ namespace C8TypoEmu
                 }
                 case 0x7:
                 {// Handle 7xkk - ADD Vx, byte
-                    registers[x] = (byte)(registers[x] + kk);
+                    int sum  = (byte)(registers[x] + kk);
+                    if (sum > 0xFF)
+                    {
+                        registers[x] = (byte)(sum & 0xFF);
+                    }
+                    else
+                    {
+                        registers[x] = (byte)(sum);
+                    }
                     break;
                 }
                 case 0x8:
@@ -208,6 +256,11 @@ namespace C8TypoEmu
                             {
                                 registers[x] = (byte)(sum & 0xFF);
                                 registers[0xF] = 1;
+                            }
+                            else
+                            {
+                                registers[x] = (byte)(sum);
+                                registers[0xF] = 0;
                             }
                             break;
                         }
@@ -298,6 +351,7 @@ namespace C8TypoEmu
                 {// Handle Dxyn - DRW Vx, Vy, nibble
                     BitArray currentLine;
                     BitArray flippedLine = new BitArray(8);
+                    registers[0xF] = 0;
 
                     for (int line = 0; line < lastNibble; line++)
                     {
@@ -364,6 +418,7 @@ namespace C8TypoEmu
                         case 0x0A:
                         {// Handle Fx0A - LD Vx, K
                             executionPaused = true;
+                            pausedOn = OpCode;
                             for (int i = 0; i < 16; i++)
                             {
                                 if (keyboard[i] == true)
@@ -397,9 +452,9 @@ namespace C8TypoEmu
                         }
                         case 0x33:
                         {// Handle Fx33 - LD B, Vx
-                            memory[registerI] = (byte)(registers[x] % 10);
+                            memory[registerI + 0] = (byte)(registers[x] / 100);
+                            memory[registerI + 2] = (byte)(registers[x] % 10);
                             memory[registerI + 1] = (byte)((registers[x] / 10) % 10);
-                            memory[registerI + 2] = (byte)(registers[x] / 100);
                             break;
                         }
                         case 0x55:
